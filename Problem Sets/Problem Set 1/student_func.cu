@@ -32,6 +32,7 @@
 //so that the entire image is processed.
 
 #include "utils.h"
+#include <math.h>
 
 __global__
 void rgba_to_greyscale(const uchar4* const rgbaImage,
@@ -43,6 +44,20 @@ void rgba_to_greyscale(const uchar4* const rgbaImage,
   //the mapping from components of a uchar4 to RGBA is:
   // .x -> R ; .y -> G ; .z -> B ; .w -> A
   //
+
+  int i = blockIdx.y * blockDim.y + threadIdx.y;
+  int j = blockIdx.x * blockDim.x + threadIdx.x;
+  
+  if ((j >= numCols) || (i >= numRows))
+    return;
+  
+  int l = i*numCols + j;
+  unsigned char r, g, b;
+  r = rgbaImage[l].x;
+  g = rgbaImage[l].y;
+  b = rgbaImage[l].z;
+  greyImage[l] = (unsigned char) (.299f * r + .587f * g + .114f * b);
+
   //The output (greyImage) at each pixel should be the result of
   //applying the formula: output = .299f * R + .587f * G + .114f * B;
   //Note: We will be ignoring the alpha channel for this conversion
@@ -57,8 +72,12 @@ void your_rgba_to_greyscale(const uchar4 * const h_rgbaImage, uchar4 * const d_r
 {
   //You must fill in the correct sizes for the blockSize and gridSize
   //currently only one block with one thread is being launched
-  const dim3 blockSize(1, 1, 1);  //TODO
-  const dim3 gridSize( 1, 1, 1);  //TODO
+  size_t bx = (size_t) ceil(numCols * 1.0f / 32);
+  size_t by = (size_t) ceil(numRows * 1.0f / 32);
+
+  
+  const dim3 blockSize(bx, by, 1);  
+  const dim3 gridSize(32, 32, 1); 
   rgba_to_greyscale<<<gridSize, blockSize>>>(d_rgbaImage, d_greyImage, numRows, numCols);
   
   cudaDeviceSynchronize(); checkCudaErrors(cudaGetLastError());
