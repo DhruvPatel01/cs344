@@ -80,6 +80,110 @@
 */
 
 #include "utils.h"
+#include <math.h>
+
+__global__ void min(
+   const float* const d_array,
+   float *d_out, const size_t max_elems)
+{
+   extern __shared__ float sdata[];
+   int tId = threadIdx.x;
+   int gId = blockDim.x *  blockIdx.x + tId;
+
+   if (gId < max_elems)
+      sdata[tId] = d_array[gId];
+   __syncthreads();
+
+   for (unsigned int s = blockDim.x/2; s > 0; s >>= 1) {
+      if (tId < s && gId < max_elems && (gId+s) < max_elems && sdata[tId] > sdata[tId+s]) 
+         sdata[tId] = sdata[tId+s];
+      __syncthreads();
+   }
+
+   if (tId == 0)
+      d_out[blockIdx.x] = sdata[0];
+}
+
+__global__ void my_cuMin(
+   const float* const d_array,
+   float *d_out, const size_t max_elems)
+{
+   extern __shared__ float sdata[];
+   int tId = threadIdx.x;
+   int gId = blockDim.x *  blockIdx.x + tId;
+
+   if (gId < max_elems)
+      sdata[tId] = d_array[gId];
+   __syncthreads();
+
+   for (unsigned int s = blockDim.x/2; s > 0; s >>= 1) {
+      if (tId < s && gId < max_elems && (gId+s) < max_elems && sdata[tId] > sdata[tId+s]) 
+         sdata[tId] = sdata[tId+s];
+      __syncthreads();
+   }
+
+   if (tId == 0)
+      d_out[blockIdx.x] = sdata[0];
+}
+
+__global__ void my_cuMax(
+   const float* const d_array,
+   float *d_out, const size_t max_elems)
+{
+   extern __shared__ float sdata[];
+   int tId = threadIdx.x;
+   int gId = blockDim.x *  blockIdx.x + tId;
+
+   if (gId < max_elems)
+      sdata[tId] = d_array[gId];
+   __syncthreads();
+
+   for (unsigned int s = blockDim.x/2; s > 0; s >>= 1) {
+      if (tId < s && gId < max_elems && (gId+s) < max_elems && sdata[tId] < sdata[tId+s]) 
+         sdata[tId] = sdata[tId+s];
+      __syncthreads();
+   }
+
+   if (tId == 0)
+      d_out[blockIdx.x] = sdata[0];
+
+}
+
+void min_or_max_driver(const float* const d_array, 
+                       float* h_out, const size_t numElems,
+                       bool is_max)
+{
+   float *d_intermediate, *d_prev;
+      
+   size_t numBlocks = (size_t) ceil(numElems/1024.0);
+   size_t prevNumBlocks;
+
+   checkCudaErrors(cudaMalloc((void **)&d_intermediate, sizeof(float)*numBlocks));
+
+   if (is_max) {
+      my_cuMax<<<numBlocks, 1024, 1024*sizeof(float)>>>(d_array, d_intermediate, numElems);
+   } else {
+      my_cuMin<<<numBlocks, 1024, 1024*sizeof(float)>>>(d_array, d_intermediate, numElems);
+   }
+
+   while (numBlocks > 1) {
+      prevNumBlocks = numBlocks;
+      numBlocks = (int) ceil(prevNumBlocks/1024.0);
+      d_prev = d_intermediate;
+      checkCudaErrors(cudaMalloc((void**) &d_intermediate, sizeof(float)*numBlocks));
+
+      if (is_max) {
+         my_cuMax<<<numBlocks, 1024, 1024*sizeof(float)>>>(d_prev, d_intermediate, prevNumBlocks);
+      } else {
+         my_cuMin<<<numBlocks, 1024, 1024*sizeof(float)>>>(d_prev, d_intermediate, prevNumBlocks);
+      }
+
+      checkCudaErrors(cudaFree(d_prev));
+   }
+
+   checkCudaErrors(cudaMemcpy(h_out, d_intermediate, sizeof(float), cudaMemcpyDeviceToHost));
+   checkCudaErrors(cudaFree(d_intermediate));
+}
 
 void your_histogram_and_prefixsum(const float* const d_logLuminance,
                                   unsigned int* const d_cdf,
