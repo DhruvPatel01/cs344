@@ -13,10 +13,13 @@ int main(int argc, char** argv) {
     float *d_array;
 
     checkCudaErrors(cudaMalloc((void **) &d_array, N*sizeof(float)));
-    checkCudaErrors(cudaMemcpy(d_array, h_array, N, cudaMemcpyDeviceToHost));
+    checkCudaErrors(cudaMemcpy(d_array, h_array, N, cudaMemcpyHostToDevice));
 
     min_or_max_driver(d_array, &h_min, N, false);
     min_or_max_driver(d_array, &h_max, N, true);
 
     checkCudaErrors(cudaFree(d_array));
+
+    printf("Maximum: %f\n", h_max);
+    printf("Minimum: %f\n", h_min);
 }

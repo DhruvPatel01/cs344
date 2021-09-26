@@ -17,6 +17,7 @@ OPENCV_INCLUDEPATH=/usr/include/opencv4/
 
 OPENCV_LIBS=-lopencv_core -lopencv_imgproc -lopencv_highgui -lopencv_imgcodecs
 CUDA_INCLUDEPATH=/opt/cuda/include
+CUDA_INCLUDEPATH2=/usr/local/cuda/include/
 
 ######################################################
 # On Macs the default install locations are below    #
@@ -25,7 +26,7 @@ CUDA_INCLUDEPATH=/opt/cuda/include
 #CUDA_INCLUDEPATH=/usr/local/cuda/include
 #CUDA_LIBPATH=/usr/local/cuda/lib
 
-NVCC_OPTS=-O3 -arch=sm_52 -Xcompiler -Wall -Xcompiler -Wextra -m64
+NVCC_OPTS=-O3 -arch=sm_37 -Xcompiler -Wall -Xcompiler -Wextra -m64
 
 GCC_OPTS=-O3 -Wall -Wextra -m64
 
@@ -33,19 +34,19 @@ student: main.o student_func.o HW3.o loadSaveImage.o compare.o reference_calc.o 
 	$(NVCC) -o HW3 main.o student_func.o HW3.o loadSaveImage.o compare.o reference_calc.o -L $(OPENCV_LIBPATH) $(OPENCV_LIBS) $(NVCC_OPTS)
 
 main.o: main.cpp timer.h utils.h reference_calc.h compare.h
-	g++ -c main.cpp $(GCC_OPTS) -I $(CUDA_INCLUDEPATH)
+	g++ -c main.cpp $(GCC_OPTS) -I $(CUDA_INCLUDEPATH) -I $(CUDA_INCLUDEPATH2)
 
 HW3.o: HW3.cu loadSaveImage.h utils.h
 	$(NVCC) -c HW3.cu -I $(OPENCV_INCLUDEPATH) $(NVCC_OPTS)
 
 loadSaveImage.o: loadSaveImage.cpp loadSaveImage.h
-	g++ -c loadSaveImage.cpp -I $(OPENCV_INCLUDEPATH) $(GCC_OPTS) -I $(CUDA_INCLUDEPATH)
+	g++ -c loadSaveImage.cpp -I $(OPENCV_INCLUDEPATH) $(GCC_OPTS) -I $(CUDA_INCLUDEPATH) -I $(CUDA_INCLUDEPATH2)
 
 compare.o: compare.cpp compare.h
-	g++ -c compare.cpp -I $(OPENCV_INCLUDEPATH) $(GCC_OPTS) -I $(CUDA_INCLUDEPATH)
+	g++ -c compare.cpp -I $(OPENCV_INCLUDEPATH) $(GCC_OPTS) -I $(CUDA_INCLUDEPATH) -I $(CUDA_INCLUDEPATH2)
 
 reference_calc.o: reference_calc.cpp reference_calc.h
-	g++ -c reference_calc.cpp -I $(OPENCV_INCLUDEPATH) $(GCC_OPTS) -I $(CUDA_INCLUDEPATH)
+	g++ -c reference_calc.cpp -I $(OPENCV_INCLUDEPATH) $(GCC_OPTS) -I $(CUDA_INCLUDEPATH) -I $(CUDA_INCLUDEPATH2)
 
 student_func.o: student_func.cu utils.h
 	$(NVCC) -c student_func.cu $(NVCC_OPTS)
