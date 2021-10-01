@@ -82,6 +82,10 @@
 #include "utils.h"
 #include <math.h>
 
+#if __CUDA_ARCH__ < 600
+  #define atomicAdd_block(X,Y) atomicAdd(X,Y)
+#endif
+
 __global__ void min(
    const float* const d_array,
    float *d_out, const size_t max_elems)
@@ -185,6 +189,41 @@ void min_or_max_driver(const float* const d_array,
    checkCudaErrors(cudaFree(d_intermediate));
 }
 
+__global__ void histogram_kernel(const float * const d_logLuminance, 
+                                 unsigned int * const d_cdf,
+                                 unsigned int numElems,
+                                 size_t numBins,
+                                 float range, float min_ll)
+{
+   extern __shared__ unsigned int local_hist[];
+   int tIdx = threadIdx.x;
+   
+   for (int i = tIdx; i < numBins; i += blockDim.x)
+      local_hist[i] = 0;
+   __syncthreads();
+
+   int gIdx = blockDim.x * blockIdx.x + tIdx;
+   if (gIdx < numElems) {
+      float x = d_logLuminance[gIdx];
+      int bin = (int) ((x - min_ll)/range * numBins);
+      if (bin == numBins)
+         bin--;
+      atomicAdd_block(&local_hist[bin], 1);
+   }
+   __syncthreads();
+
+   for (int i = tIdx; i < numBins; i += blockDim.x)
+      atomicAdd(&d_cdf[i], local_hist[i]);
+}       
+
+__global__ void ex_scan(
+      unsigned int *d_cdf, const unsigned int* d_histogram, int numBins){
+   d_cdf[0] = 0;
+   for (size_t i = 1; i < numBins; ++i) {
+      d_cdf[i] = d_cdf[i - 1] + d_histogram[i - 1];
+  }
+}
+
 void your_histogram_and_prefixsum(const float* const d_logLuminance,
                                   unsigned int* const d_cdf,
                                   float &min_logLum,
@@ -204,5 +243,25 @@ void your_histogram_and_prefixsum(const float* const d_logLuminance,
        the cumulative distribution of luminance values (this should go in the
        incoming d_cdf pointer which already has been allocated for you)       */
 
+   float tmp_max, tmp_min;
+   min_or_max_driver(d_logLuminance, &tmp_max, numRows*numCols, true);
+   min_or_max_driver(d_logLuminance, &tmp_min, numRows*numCols, false);
 
+   float log_range = tmp_max - tmp_min;
+
+   min_logLum = tmp_min;
+   max_logLum = tmp_max;
+
+   unsigned int* d_histogram;
+   checkCudaErrors(cudaMalloc((void **)d_histogram, numBins*sizeof(int)));
+   checkCudaErrors(cudaMemset((void *) d_histogram, 0, numBins*sizeof(int)));
+
+   float tpb = 1024.0;
+   histogram_kernel<<<ceil(numRows*numCols/tpb), (int)tpb, numBins*sizeof(int)>>>(
+      d_logLuminance, d_histogram, numRows*numCols, numBins, log_range, tmp_min
+   );
+
+   checkCudaErrors(cudaMemset((void *) d_cdf, 0, sizeof(int)*numBins));
+   ex_scan<<<1, 1>>>(d_cdf, d_histogram, numBins);
+   checkCudaErrors(cudaFree(d_histogram));
 }

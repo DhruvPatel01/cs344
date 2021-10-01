@@ -6,7 +6,9 @@ void min_or_max_driver(const float* const d_array,
 
 int main(int argc, char** argv) {
     int N = 1030;
-    float h_array[N];
+    float *h_array;
+
+    h_array = (float *) malloc(sizeof(float)*N);
     float h_min, h_max;
     for (int i = 0; i < N; i++) 
         h_array[i] = i;
@@ -22,4 +24,5 @@ int main(int argc, char** argv) {
 
     printf("Maximum: %f\n", h_max);
     printf("Minimum: %f\n", h_min);
+    free(h_array);
 }
