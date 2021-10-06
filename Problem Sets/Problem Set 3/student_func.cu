@@ -224,12 +224,12 @@ __global__ void ex_scan(unsigned int *d_cdf,
                         int numBins){
    int tId = threadIdx.x;
    int D = (int) ceil(log2((double)numBins)) - 1;
-   unsigned int val = d_cdf[tId];
+   unsigned int val = d_histogram[tId];
    unsigned int y;
    extern __shared__ unsigned int ex_scan_local[];
 
    if (tId < numBins)
-      ex_scan_local[tId] = d_cdf[tId];
+      ex_scan_local[tId] = d_histogram[tId];
 
    for (int d = 0; d <= D; d++) {
       int p = pow(2, d);
