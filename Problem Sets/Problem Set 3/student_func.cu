@@ -189,8 +189,10 @@ void min_or_max_driver(const float* const d_array,
    checkCudaErrors(cudaFree(d_intermediate));
 }
 
+const int NUM_SEGMENTS = 2;
+
 __global__ void histogram_kernel(const float * const d_logLuminance, 
-                                 unsigned int * const d_cdf,
+                                 unsigned int * const d_histogram,
                                  unsigned int numElems,
                                  size_t numBins,
                                  float range, float min_ll)
@@ -212,8 +214,11 @@ __global__ void histogram_kernel(const float * const d_logLuminance,
    }
    __syncthreads();
 
+
+   int base = (blockIdx.x % NUM_SEGMENTS)*numBins;
+
    for (int i = tIdx; i < numBins; i += blockDim.x)
-      atomicAdd(&d_cdf[i], local_hist[i]);
+      atomicAdd(&d_histogram[base+i], local_hist[i]);
 }       
 
 /*
@@ -261,7 +266,15 @@ __global__ void shift_right(unsigned int *d_cdf)
    __syncthreads();
 
    d_cdf[tId] = val;
-   
+}
+
+__global__ void merge_segments(unsigned int * d_histogram, int numBins) 
+{
+   int tId = threadIdx.x;
+   unsigned int local = 0;
+   for (int i = 0; i < NUM_SEGMENTS; i++)
+      local += d_histogram[i*numBins+tId];
+   d_histogram[tId] = local;
 }
 
 void your_histogram_and_prefixsum(const float* const d_logLuminance,
@@ -293,13 +306,18 @@ void your_histogram_and_prefixsum(const float* const d_logLuminance,
    max_logLum = tmp_max;
 
    unsigned int* d_histogram;
-   checkCudaErrors(cudaMalloc((void **) &d_histogram, numBins*sizeof(int)));
+   checkCudaErrors(cudaMalloc((void **) &d_histogram, 
+                   NUM_SEGMENTS*numBins*sizeof(int)));
    checkCudaErrors(cudaMemset((void *) d_histogram, 0, numBins*sizeof(int)));
 
    float tpb = 1024.0;
    histogram_kernel<<<ceil(numRows*numCols/tpb), (int)tpb, numBins*sizeof(int)>>>(
       d_logLuminance, d_histogram, numRows*numCols, numBins, log_range, tmp_min
    );
+
+   if (NUM_SEGMENTS > 1) {
+      merge_segments<<<1, numBins>>>(d_histogram, numBins);
+   }
 
    checkCudaErrors(cudaMemset((void *) d_cdf, 0, sizeof(int)*numBins));
    int nthreads = pow(2, ceil(log2(numBins)));
