@@ -216,12 +216,52 @@ __global__ void histogram_kernel(const float * const d_logLuminance,
       atomicAdd(&d_cdf[i], local_hist[i]);
 }       
 
-__global__ void ex_scan(
-      unsigned int *d_cdf, const unsigned int* d_histogram, int numBins){
-   d_cdf[0] = 0;
-   for (size_t i = 1; i < numBins; ++i) {
-      d_cdf[i] = d_cdf[i - 1] + d_histogram[i - 1];
-  }
+/*
+   Following implementation assumes that numBins <= blockDim.x;
+*/
+__global__ void ex_scan(unsigned int *d_cdf, 
+                        const unsigned int * d_histogram, 
+                        int numBins){
+   int tId = threadIdx.x;
+   int D = (int) ceil(log2((double)numBins)) - 1;
+   unsigned int val = d_cdf[tId];
+   unsigned int y;
+   extern __shared__ unsigned int ex_scan_local[];
+
+   if (tId < numBins)
+      ex_scan_local[tId] = d_cdf[tId];
+
+   for (int d = 0; d <= D; d++) {
+      int p = pow(2, d);
+      if (tId >= p && tId < numBins)
+         y = ex_scan_local[(int)tId - p];
+      __syncthreads();
+
+      if (tId >= p && tId < numBins) {
+         val += y;
+         ex_scan_local[tId] = val;
+      }
+      __syncthreads();
+   }
+
+   if (tId < numBins)
+      d_cdf[tId] = ex_scan_local[tId];
+
+
+}
+
+__global__ void shift_right(unsigned int *d_cdf) 
+{
+   int tId = threadIdx.x;
+   unsigned int val;
+   if (tId == 0)
+      val = 0;
+   else
+      val = d_cdf[tId-1];
+   __syncthreads();
+
+   d_cdf[tId] = val;
+   
 }
 
 void your_histogram_and_prefixsum(const float* const d_logLuminance,
@@ -253,7 +293,7 @@ void your_histogram_and_prefixsum(const float* const d_logLuminance,
    max_logLum = tmp_max;
 
    unsigned int* d_histogram;
-   checkCudaErrors(cudaMalloc((void **)d_histogram, numBins*sizeof(int)));
+   checkCudaErrors(cudaMalloc((void **) &d_histogram, numBins*sizeof(int)));
    checkCudaErrors(cudaMemset((void *) d_histogram, 0, numBins*sizeof(int)));
 
    float tpb = 1024.0;
@@ -262,6 +302,8 @@ void your_histogram_and_prefixsum(const float* const d_logLuminance,
    );
 
    checkCudaErrors(cudaMemset((void *) d_cdf, 0, sizeof(int)*numBins));
-   ex_scan<<<1, 1>>>(d_cdf, d_histogram, numBins);
+   int nthreads = pow(2, ceil(log2(numBins)));
+   ex_scan<<<1, nthreads, numBins*sizeof(int)>>>(d_cdf, d_histogram, numBins);
+   shift_right<<<1, numBins>>>(d_cdf);
    checkCudaErrors(cudaFree(d_histogram));
 }
